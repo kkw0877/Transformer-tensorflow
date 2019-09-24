@@ -1,6 +1,115 @@
 import tensorflow as tf
+from tensorflow.python.ops import lookup_ops
 
 import numpy as np
+
+from collections import namedtuple
+
+from utils import iterator_util
+from utils import preprocess_util
+
+class TrainModel(
+    namedtuple('TrainModel', 
+               ('graph', 'model', 'iterator'))):
+    pass
+
+class EvalModel(
+    namedtuple('EvalModel', 
+               ('graph', 'model', 'iterator'))):
+    pass
+
+
+def create_train_model(hparams, model_creator):
+    src_file = hparams.src_train_file
+    tgt_file = hparams.tgt_train_file
+    
+    src_vocab_file = hparams.src_vocab_file
+    tgt_vocab_file = hparams.tgt_vocab_file
+    
+    # set graph for train mode
+    graph = tf.Graph()
+    with graph.as_default():
+        # dataset
+        src_dataset = tf.data.TextLineDataset(src_file)
+        tgt_dataset = tf.data.TextLineDataset(tgt_file)
+        
+        # vocab_table mapping string to index
+        src_vocab_table = lookup_ops.index_table_from_file(
+            src_vocab_file, default_value=preprocess_util.UNK_ID)
+        tgt_vocab_table = lookup_ops.index_table_from_file(
+            tgt_vocab_file, default_value=preprocess_util.UNK_ID)
+        
+        # iterator for train mode
+        iterator = iterator_util.get_iterator(
+            src_dataset=src_dataset, 
+            tgt_dataset=tgt_dataset, 
+            src_vocab_table=src_vocab_table, 
+            tgt_vocab_table=tgt_vocab_table, 
+            batch_size=hparams.batch_size, 
+            src_max_len=hparams.src_max_len, 
+            tgt_max_len=hparams.tgt_max_len,
+            sos=hparams.sos, 
+            eos=hparams.eos,
+            pad=hparams.pad,
+            random_seed=hparams.random_seed, 
+            reshuffle_each_iteration=hparams.reshuffle_each_iteration)
+        
+        train_model = model_creator(hparams=hparams, 
+                                    mode=tf.estimator.ModeKeys.TRAIN, 
+                                    iterator=iterator, 
+                                    reverse_target_vocab_table=None)
+    
+    return TrainModel(graph=graph,
+                      model=train_model,
+                      iterator=iterator)
+
+def create_eval_model(hparams, model_creator):
+    src_file = hparams.src_eval_file
+    tgt_file = hparams.tgt_eval_file
+    
+    src_vocab_file = hparams.src_vocab_file
+    tgt_vocab_file = hparams.tgt_vocab_file
+    
+    # set graph for eval mode
+    graph = tf.Graph()
+    with graph.as_default():
+        # dataset
+        src_dataset = tf.data.TextLineDataset(src_file)
+        tgt_dataset = tf.data.TextLineDataset(tgt_file)
+        
+        # vocab_table mapping string to index
+        src_vocab_table = lookup_ops.index_table_from_file(
+            src_vocab_file, default_value=preprocess_util.UNK_ID)
+        tgt_vocab_table = lookup_ops.index_table_from_file(
+            tgt_vocab_file, default_value=preprocess_util.UNK_ID)
+        # reverse vocab table mapping index to string
+        reverse_target_vocab_table = lookup_ops.index_to_string_table_from_file(
+            tgt_vocab_file, default_value=preprocess_util.UNK)
+        
+        # iterator for eval mode
+        iterator = iterator_util.get_iterator(
+            src_dataset=src_dataset, 
+            tgt_dataset=tgt_dataset, 
+            src_vocab_table=src_vocab_table, 
+            tgt_vocab_table=tgt_vocab_table, 
+            batch_size=hparams.batch_size, 
+            src_max_len=hparams.src_max_len, 
+            tgt_max_len=hparams.tgt_max_len,
+            sos=hparams.sos, 
+            eos=hparams.eos,
+            pad=hparams.pad,
+            random_seed=hparams.random_seed, 
+            reshuffle_each_iteration=hparams.reshuffle_each_iteration)
+        
+        eval_model = model_creator(hparams=hparams, 
+                                   mode=tf.estimator.ModeKeys.EVAL, 
+                                   iterator=iterator, 
+                                   reverse_target_vocab_table=reverse_target_vocab_table) # todo. 여기서의 reverse table은 test를 위한 용도. 이 부분 이후에 None으로 변경해야 한다.
+    
+    return EvalModel(graph=graph,
+                      model=eval_model,
+                      iterator=iterator)
+
 
 def get_initializer(init_op, random_seed, init_weight):
     if init_op == 'uniform':
