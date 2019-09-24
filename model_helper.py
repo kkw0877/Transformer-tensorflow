@@ -110,6 +110,17 @@ def create_eval_model(hparams, model_creator):
                       model=eval_model,
                       iterator=iterator)
 
+def create_or_load_model(model, model_dir, sess):
+    ckpt = tf.train.latest_checkpoint(model_dir)
+    # check whether checkpoint file exists or not
+    if ckpt:
+        model.saver.restore(sess, ckpt)
+    else:
+        sess.run(tf.global_variables_initializer())
+            
+    sess.run(tf.tables_initializer()) 
+    global_step = model.global_step.eval(session=sess)
+    return model, global_step
 
 def get_initializer(init_op, random_seed, init_weight):
     if init_op == 'uniform':
