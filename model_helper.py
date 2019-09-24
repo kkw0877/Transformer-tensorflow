@@ -2,6 +2,26 @@ import tensorflow as tf
 
 import numpy as np
 
+def get_initializer(init_op, random_seed, init_weight):
+    if init_op == 'uniform':
+        return tf.initializers.random_uniform(
+            -init_weight, init_weight, seed=random_seed)
+    elif init_op == 'glorot_normal':
+        return tf.keras.initializers.glorot_normal(
+            seed=random_seed)
+    elif init_op == 'glorot_uniform':
+        return tf.keras.initializers.glorot_uniform(
+            seed=random_seed)
+    else:
+        raise ValueError('Unknown init_op %s!' % init_op)
+
+def get_device_str(device_id, num_gpus):
+    if num_gpus == 0:
+        return '/cpu:0'
+    
+    device_str = '/gpu:%d' % (device_id % num_gpus)
+    return device_str
+
 def embedding_for_encoder_and_decoder(src_vocab_size, 
                                       src_embedding_size, 
                                       tgt_vocab_size, 
