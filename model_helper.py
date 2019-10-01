@@ -104,11 +104,11 @@ def create_eval_model(hparams, model_creator):
         eval_model = model_creator(hparams=hparams, 
                                    mode=tf.estimator.ModeKeys.EVAL, 
                                    iterator=iterator, 
-                                   reverse_target_vocab_table=reverse_target_vocab_table) # todo. 여기서의 reverse table은 test를 위한 용도. 이 부분 이후에 None으로 변경해야 한다.
+                                   reverse_target_vocab_table=reverse_target_vocab_table) 
     
     return EvalModel(graph=graph,
-                      model=eval_model,
-                      iterator=iterator)
+                     model=eval_model,
+                     iterator=iterator)
 
 def create_or_load_model(model, model_dir, sess):
     ckpt = tf.train.latest_checkpoint(model_dir)
@@ -209,11 +209,30 @@ def scaled_dot_product_attention(query, key, value, mask=False):
     outputs = tf.matmul(outputs, value)
     
     return outputs
+
+def fully_connected(inputs, num_units, activation_fn, batch_norm, training):
+    outputs = tf.keras.layers.Dense(
+        num_units, activation=None, use_bias=False)(inputs)    
+
+    if batch_norm:
+        outputs = tf.layers.batch_normalization(
+            outputs, training=training)
+    else:
+        bias = tf.Variable(tf.zeros([num_units]))
+        outputs = tf.add(outputs, bias)
+
+    if activation_fn:
+        outputs = activation_fn(outputs)
+
+    return outputs
     
-def multi_head_attention(query, key, value, d_model, num_heads, mask=False):
-    query = tf.keras.layers.Dense(d_model, activation=tf.nn.relu)(query)
-    key = tf.keras.layers.Dense(d_model, activation=tf.nn.relu)(key)
-    value = tf.keras.layers.Dense(d_model, activation=tf.nn.relu)(value)
+def multi_head_attention(query, key, value, d_model, num_heads, batch_norm, training, mask=False):
+    query = fully_connected(
+        query, d_model, activation_fn=tf.nn.relu, batch_norm=batch_norm, training=training)
+    key = fully_connected(
+        key, d_model, activation_fn=tf.nn.relu, batch_norm=batch_norm, training=training)
+    value = fully_connected(
+        value, d_model, activation_fn=tf.nn.relu, batch_norm=batch_norm, training=training)
     
     # query, key, value shape = [batch_size, sequence_length, d_model]
     query_shape = query.get_shape().as_list()
@@ -227,19 +246,20 @@ def multi_head_attention(query, key, value, d_model, num_heads, mask=False):
     outputs = scaled_dot_product_attention(query, key, value, mask)
     # reshape the tensors into original shape
     outputs = tf.concat(tf.split(outputs, num_heads, axis=0), axis=-1)
-    outputs = tf.keras.layers.Dense(d_model, activation=tf.nn.relu)(outputs)
+    outputs = fully_connected(
+        outputs, d_model, activation_fn=tf.nn.relu, batch_norm=batch_norm, training=training)
     
     # check outputs_shape [batch_size, sequence_length, d_model]
     assert query_shape == outputs.get_shape().as_list()
     
     return outputs
     
-def feed_forward(inputs, feed_forward_dim):
+def feed_forward(inputs, feed_forward_dim, batch_norm, training):
     inputs_shape = inputs.get_shape().as_list()[-1]
-    outputs = tf.keras.layers.Dense(feed_forward_dim, 
-                                    activation=tf.nn.relu)(inputs)
-    outputs = tf.keras.layers.Dense(inputs_shape)(outputs)
-    
+    outputs = fully_connected(
+        inputs, feed_forward_dim, activation_fn=tf.nn.relu, batch_norm=batch_norm, training=training)
+    outputs = fully_connected(
+        outputs, inputs_shape, activation_fn=None, batch_norm=batch_norm, training=training)
     return outputs
 
 def layer_norm(inputs, epsilon=1e-6):
@@ -248,8 +268,8 @@ def layer_norm(inputs, epsilon=1e-6):
     mean = tf.keras.backend.mean(inputs, axis=[-1], keepdims=True)
     std = tf.keras.backend.std(inputs, axis=[-1], keepdims=True)
     
-    gamma = tf.Variable(tf.ones(inputs_shape), trainable=False)
-    beta = tf.Variable(tf.zeros(inputs_shape), trainable=False)
+    gamma = tf.Variable(tf.ones(inputs_shape)) 
+    beta = tf.Variable(tf.zeros(inputs_shape))
     
     return gamma * (inputs - mean) / (std + epsilon) + beta
 
@@ -259,7 +279,9 @@ def build_encoder_module(inputs,
                          feed_forward_dim, 
                          enc_num, 
                          mode, 
-                         keep_prob):
+                         keep_prob,
+                         batch_norm,
+                         training):
     
     with tf.variable_scope('encoder_%d' % enc_num):
         # depending on the mode, change keep_prob for dropout
@@ -272,7 +294,9 @@ def build_encoder_module(inputs,
             key=inputs, 
             value=inputs, 
             d_model=d_model, 
-            num_heads=num_heads)
+            num_heads=num_heads,
+            batch_norm=batch_norm,
+            training=training)
             
         # add, layer_norm
         outputs = layer_norm(inputs + tf.nn.dropout(attention_outputs, 
@@ -281,7 +305,10 @@ def build_encoder_module(inputs,
         ## second sublayer
         # outputs, feed_forward
         feed_forward_outputs = feed_forward(
-            inputs=outputs, feed_forward_dim=feed_forward_dim)
+            inputs=outputs,
+            feed_forward_dim=feed_forward_dim,
+            batch_norm=batch_norm,
+            training=training)
         
         # add, layer_norm
         outputs = layer_norm(outputs + tf.nn.dropout(feed_forward_outputs, 
@@ -297,7 +324,9 @@ def build_encoder(num_enc_layers,
                   base_gpu, 
                   num_gpus, 
                   mode, 
-                  keep_prob):
+                  keep_prob,
+                  batch_norm,
+                  training):
     
     outputs = inputs
     for i in range(num_enc_layers):
@@ -309,7 +338,9 @@ def build_encoder(num_enc_layers,
                 feed_forward_dim=feed_forward_dim,
                 enc_num=i,
                 mode=mode, 
-                keep_prob=keep_prob)
+                keep_prob=keep_prob,
+                batch_norm=batch_norm,
+                training=training)
         
     return outputs
 
@@ -320,7 +351,9 @@ def build_decoder_module(inputs,
                          feed_forward_dim, 
                          dec_num, 
                          mode, 
-                         keep_prob):
+                         keep_prob,
+                         batch_norm,
+                         training):
     
     with tf.variable_scope("decoder_%d" % dec_num):
         # depending on the mode, change keep_prob for dropout
@@ -333,7 +366,9 @@ def build_decoder_module(inputs,
             key=inputs, 
             value=inputs, 
             d_model=d_model, 
-            num_heads=num_heads, 
+            num_heads=num_heads,
+            batch_norm=batch_norm,
+            training=training,
             mask=True)
             
         # add, layer_norm
@@ -347,17 +382,22 @@ def build_decoder_module(inputs,
             key=enc_outputs, 
             value=enc_outputs, 
             d_model=d_model, 
-            num_heads=num_heads)
+            num_heads=num_heads,
+            batch_norm=batch_norm,
+            training=training)
             
         # add, layer_norm
         outputs = layer_norm(outputs + tf.nn.dropout(attention_outputs, 
                                                      keep_prob))
 
-            
         ## third sublayer
         # outputs, feed_forward
-        feed_forward_outputs = feed_forward(inputs=outputs, 
-                                            feed_forward_dim=feed_forward_dim)
+        feed_forward_outputs = feed_forward(
+            inputs=outputs,
+            feed_forward_dim=feed_forward_dim,
+            batch_norm=batch_norm,
+            training=training)
+        
         # add, layer_norm
         outputs = layer_norm(outputs + tf.nn.dropout(feed_forward_outputs, 
                                                      keep_prob))
@@ -373,7 +413,9 @@ def build_decoder(num_dec_layers,
                   base_gpu, 
                   num_gpus, 
                   mode, 
-                  keep_prob):
+                  keep_prob,
+                  batch_norm,
+                  training):
     
     outputs = inputs
     for i in range(num_dec_layers):
@@ -386,6 +428,8 @@ def build_decoder(num_dec_layers,
                 feed_forward_dim=feed_forward_dim,
                 dec_num=i,
                 mode=mode, 
-                keep_prob=keep_prob)
+                keep_prob=keep_prob,
+                batch_norm=batch_norm,
+                training=training)
         
     return outputs

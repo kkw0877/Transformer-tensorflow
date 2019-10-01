@@ -69,6 +69,9 @@ class Transformer(object):
         
         # number of gpus
         self.num_gpus = hparams.num_gpus
+
+        # batch_norm
+        self.batch_norm = hparams.batch_norm
         
         # global_step
         self.global_step = tf.Variable(0, trainable=False)
@@ -169,22 +172,19 @@ class Transformer(object):
             params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
             
             if hparams.optimizer == 'adam':
-                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(
-                    loss=self.train_loss, 
-                    var_list=params,
-                    global_step=self.global_step)
+                opt = tf.train.AdamOptimizer(self.learning_rate)
             elif hparams.optimizer == 'rmsprop':
-                self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate).minimize(
-                    loss=self.train_loss, 
-                    var_list=params,
-                    global_step=self.global_step)
+                opt = tf.train.RMSPropOptimizer(self.learning_rate)
             elif hparams.optimizer == 'sgd':
-                self.optimizer = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(
-                    loss=self.train_loss, 
-                    var_list=params,
-                    global_step=self.global_step)
+                opt = tf.train.GradientDescentOptimizer(self.learning_rate)
             else:
                 raise ValueError('Unknown Optimizer %s' % hparams.optimizer)
+
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.optimizer = opt.minimize(
+                    loss=self.train_loss,
+                    var_list=params,
+                    global_step=self.global_step)
                 
             self.train_summary = self.create_train_summary()
 
@@ -228,7 +228,9 @@ class Transformer(object):
             base_gpu=base_gpu, 
             num_gpus=self.num_gpus, 
             mode=self.mode, 
-            keep_prob=self.keep_prob)
+            keep_prob=self.keep_prob,
+            batch_norm=self.batch_norm,
+            training=(self.mode == tf.estimator.ModeKeys.TRAIN))
         
         return enc_outputs
     
@@ -243,7 +245,9 @@ class Transformer(object):
             base_gpu=base_gpu, 
             num_gpus=self.num_gpus, 
             mode=self.mode, 
-            keep_prob=self.keep_prob)
+            keep_prob=self.keep_prob,
+            batch_norm=self.batch_norm,
+            training=(self.mode == tf.estimator.ModeKeys.TRAIN))
         
         return dec_outputs
     
