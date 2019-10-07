@@ -11,28 +11,28 @@ FLAGS = None
 
 def add_arguments(parser):
     # Network
-    parser.add_argument('--keep_prob', default=0.5, type=float)
+    parser.add_argument('--keep_prob', default=0.7, type=float)
     parser.add_argument('--model_name', default='transformer', type=str)
-    parser.add_argument('--d_model', default=50, type=int)
+    parser.add_argument('--d_model', default=80, type=int)
     parser.add_argument('--num_heads', default=5, type=int)
-    parser.add_argument('--feed_forward_dim', default=16, type=int)
+    parser.add_argument('--feed_forward_dim', default=60, type=int)
     parser.add_argument('--num_enc_layers', default=2, type=int)
     parser.add_argument('--num_dec_layers', default=2, type=int)
 
     # Initializer
-    parser.add_argument('--init_op', default='glorot_uniform', type=str,
+    parser.add_argument('--init_op', default='glorot_normal', type=str,
                         help="glorot_normal | glorot_uniform | uniform")
     parser.add_argument('--init_weight', default=0.1, type=float)
     
     # Embedding
-    parser.add_argument('--src_embedding_size', default=50, type=int)
-    parser.add_argument('--tgt_embedding_size', default=50, type=int)
+    parser.add_argument('--src_embedding_size', default=80, type=int)
+    parser.add_argument('--tgt_embedding_size', default=80, type=int)
     
     # Preprocessing
     parser.add_argument('--file_name', default='ChatbotData.csv', type=str)
     parser.add_argument('--share', default=True, type=bool)
     parser.add_argument('--split_text', default='white space', type=str)
-    parser.add_argument('--test_size', default=0.05, type=float)
+    parser.add_argument('--test_size', default=0.1, type=float)
     
     # Iterator
     parser.add_argument('--sos', default='<s>', type=str)
@@ -47,8 +47,8 @@ def add_arguments(parser):
     parser.add_argument('--allow_soft_placement', default=True, type=bool)
     
     # Learning
-    parser.add_argument('--num_epochs', default=400, type=int)
-    parser.add_argument('--optimizer', default='adam', type=str,
+    parser.add_argument('--num_epochs', default=2000, type=int)
+    parser.add_argument('--optimizer', default='rmsprop', type=str,
                         help='adam | rmsprop | sgd')
     parser.add_argument('--learning_rate', default=0.001, type=float)
     
@@ -56,6 +56,7 @@ def add_arguments(parser):
     parser.add_argument('--random_seed', default=None) 
     parser.add_argument('--num_ckpts', default=5, type=int)
     parser.add_argument('--out_dir', default='train_result', type=str)
+    parser.add_argument('--batch_norm', default=True, type=bool)
     
     parser.add_argument('--epochs_per_eval', default=2, type=int)
     parser.add_argument('--epochs_per_infer', default=2, type=int)
@@ -111,7 +112,8 @@ def create_hparams(flags):
         epochs_per_eval=flags.epochs_per_eval, 
         epochs_per_infer=flags.epochs_per_infer, 
         num_gpus=flags.num_gpus, 
-        batch_size=flags.batch_size)
+        batch_size=flags.batch_size,
+        batch_norm=flags.batch_norm)
     
 def add_extra_arguments(hparams, extra_arguments):
     '''
